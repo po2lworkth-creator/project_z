@@ -5,25 +5,28 @@ from ..callbacks import Cb
 from ..storage import get_user
 from ..keyboards import wallet_kb
 from ..states import WalletStates
+from ..utils import edit_message_any
 
 def register(bot: TeleBot):
 
     @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith(Cb.NAV + ":wallet"))
     def open_wallet(c: CallbackQuery):
-        u = get_user(c.from_user.id, c.from_user.username)
-        text = (
-            "💰 *Кошелёк*\n"
-            f"Текущий баланс: *{u.balance}*\n\n"
-            "Выбери действие:"
-        )
-        bot.edit_message_caption(
-            caption=text,
-            chat_id=c.message.chat.id,
-            message_id=c.message.message_id,
-            reply_markup=wallet_kb(),
-            parse_mode="Markdown",
-        )
-        bot.answer_callback_query(c.id)
+        try:
+            u = get_user(c.from_user.id, c.from_user.username)
+            text = (
+                "💰 *Кошелёк*\n"
+                f"Текущий баланс: *{u.balance}*\n\n"
+                "Выбери действие:"
+            )
+            edit_message_any(
+                bot,
+                c.message,
+                text,
+                reply_markup=wallet_kb(),
+                parse_mode="Markdown",
+            )
+        finally:
+            bot.answer_callback_query(c.id)
 
     @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith(Cb.WAL + ":topup"))
     def wallet_topup(c: CallbackQuery):

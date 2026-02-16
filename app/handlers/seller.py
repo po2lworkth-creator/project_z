@@ -1,3 +1,5 @@
+from typing import Optional
+
 from telebot import TeleBot
 from telebot.types import (
     CallbackQuery,
@@ -24,6 +26,7 @@ from ..storage import (
     approve_seller,
     reject_seller,
 )
+from ..keyboards import profile_kb
 
 
 def _apply_kb() -> InlineKeyboardMarkup:
@@ -47,7 +50,7 @@ def _admin_review_kb(user_id: int) -> InlineKeyboardMarkup:
     return kb
 
 
-def _parse_user_id(action: str, prefix: str) -> int | None:
+def _parse_user_id(action: str, prefix: str) -> Optional[int]:
     if not action.startswith(prefix + ":"):
         return None
     tail = action.split(":", 1)[1].strip()
@@ -63,6 +66,54 @@ def _has_phone(u) -> bool:
     return bool(phone and str(phone).strip())
 
 
+def _send_profile(bot: TeleBot, chat_id: int, user_id: int, username: Optional[str]):
+    u = get_user(user_id, username)
+    username_text = f"@{u.username}" if u.username else "нет"
+    phone_linked = bool(u.phone)
+    phone_text = u.phone if u.phone else "не привязан"
+    created_at = u.created_at.strftime("%d.%m.%Y %H:%M") if u.created_at else "нет"
+
+    text = (
+        "👤 *Профиль*\n"
+        f"ID: `{u.user_id}`\n"
+        f"Username: {username_text}\n"
+        f"Баланс: *{u.balance}*\n\n"
+        f"Телефон: *{phone_text}*\n"
+        f"Регистрация: *{created_at}*\n"
+    )
+
+    bot.send_message(
+        chat_id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=profile_kb(phone_linked=phone_linked),
+    )
+
+
+def _send_seller_next_step(bot: TeleBot, chat_id: int, u):
+    """
+    Не смешиваем "привязку телефона" и "seller-роль".
+    Если телефон уже есть - сразу ведем по seller-flow (заявка/ожидание/уже продавец).
+    """
+    if u.seller_status == SELLER_STATUS_SELLER or u.is_seller:
+        bot.send_message(chat_id, "✅ У тебя уже есть возможности продавца.")
+        return
+
+    if u.seller_status == SELLER_STATUS_APPLIED:
+        bot.send_message(chat_id, "⏳ Заявка уже подана и ожидает рассмотрения.")
+        return
+
+    if u.seller_status in (SELLER_STATUS_NONE, SELLER_STATUS_REJECTED):
+        bot.send_message(
+            chat_id,
+            "✅ Телефон подтвержден.\nТеперь можешь подать заявку на роль продавца.",
+            reply_markup=_apply_kb(),
+        )
+        return
+
+    bot.send_message(chat_id, "Статус продавца не распознан. Напиши в поддержку.")
+
+
 def register(bot: TeleBot, cfg: Config):
 
     @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith(Cb.SELL + ":verify_phone"))
@@ -70,32 +121,19 @@ def register(bot: TeleBot, cfg: Config):
         bot.answer_callback_query(c.id)
         u = get_user(c.from_user.id, c.from_user.username)
 
-        if not _is_phone_verified(u) or not _has_phone(u):
+        if not _has_phone(u):
             bot.send_message(
                 c.message.chat.id,
-                "✅ Чтобы подать заявку на продавца, нужно подтвердить номер телефона.\n"
-                "Нажми кнопку ниже и отправь свой контакт.",
+                "✅ Чтобы получить возможности продавца, сначала привяжи номер - нажми кнопку ниже и отправь свой контакт.",
                 reply_markup=_verify_phone_kb(),
             )
             return
 
-        if u.seller_status in (SELLER_STATUS_NONE, SELLER_STATUS_REJECTED):
-            bot.send_message(
-                c.message.chat.id,
-                "✅ Телефон подтвержден.\nТеперь можешь подать заявку на роль продавца.",
-                reply_markup=_apply_kb(),
-            )
-            return
+        if not _is_phone_verified(u):
+            verify_user_phone(u.user_id, u.phone)
 
-        if u.seller_status == SELLER_STATUS_APPLIED:
-            bot.send_message(c.message.chat.id, "⏳ Заявка уже подана и ожидает рассмотрения.")
-            return
-
-        if u.seller_status == SELLER_STATUS_SELLER:
-            bot.send_message(c.message.chat.id, "✅ Ты уже продавец - доп функции доступны.")
-            return
-
-        bot.send_message(c.message.chat.id, "Статус продавца не распознан. Напиши в поддержку.")
+        u = get_user(c.from_user.id, c.from_user.username)
+        _send_seller_next_step(bot, c.message.chat.id, u)
 
     @bot.callback_query_handler(func=lambda c: c.data and c.data == pack(Cb.SELL, "apply"))
     def apply_seller_role(c: CallbackQuery):
@@ -109,7 +147,7 @@ def register(bot: TeleBot, cfg: Config):
             )
             return
 
-        if u.seller_status == SELLER_STATUS_SELLER:
+        if u.seller_status == SELLER_STATUS_SELLER or u.is_seller:
             bot.send_message(c.message.chat.id, "Ты уже продавец.")
             return
 
@@ -138,7 +176,7 @@ def register(bot: TeleBot, cfg: Config):
 
     @bot.message_handler(content_types=["contact"])
     def got_contact_anytime(m: Message):
-        u = get_user(m.from_user.id, m.from_user.username)
+        get_user(m.from_user.id, m.from_user.username)
 
         if not m.contact:
             bot.send_message(m.chat.id, "Нужно отправить контакт кнопкой «📱 Отправить номер».")
@@ -157,10 +195,11 @@ def register(bot: TeleBot, cfg: Config):
 
         bot.send_message(
             m.chat.id,
-            "✅ Номер подтвержден.\nТеперь можно подать заявку на роль продавца.",
+            "✅ Телефон привязан.",
             reply_markup=ReplyKeyboardRemove(),
         )
-        bot.send_message(m.chat.id, "Нажми кнопку ниже, чтобы подать заявку.", reply_markup=_apply_kb())
+
+        _send_profile(bot, m.chat.id, m.from_user.id, m.from_user.username)
 
     @bot.callback_query_handler(func=lambda c: c.data and c.data.startswith(Cb.SELL + ":adm_approve:"))
     def admin_approve(c: CallbackQuery):
@@ -179,7 +218,10 @@ def register(bot: TeleBot, cfg: Config):
         u = get_user(user_id, None)
 
         if not _is_phone_verified(u) or not _has_phone(u):
-            bot.send_message(c.message.chat.id, f"Нельзя подтвердить - у пользователя нет подтвержденного телефона: {user_id}")
+            bot.send_message(
+                c.message.chat.id,
+                f"Нельзя подтвердить - у пользователя нет подтвержденного телефона: {user_id}",
+            )
             return
 
         approve_seller(user_id)
