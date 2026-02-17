@@ -11,7 +11,7 @@ CATEGORIES = [
 ]
 
 
-def main_menu_kb(page: int = 1) -> types.InlineKeyboardMarkup:
+def main_menu_kb(page: int = 1, show_admin_panel: bool = False, show_super_admin_panel: bool = False) -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=2)
 
     kb.row(
@@ -28,6 +28,59 @@ def main_menu_kb(page: int = 1) -> types.InlineKeyboardMarkup:
         types.InlineKeyboardButton("Получить возможности продавца", callback_data=pack(Cb.SELL, "verify_phone")),
     )
 
+    if show_admin_panel:
+        kb.row(types.InlineKeyboardButton("🛠 Админ-панель", callback_data=pack(Cb.ADM, "open")))
+
+    if show_super_admin_panel:
+        kb.row(types.InlineKeyboardButton("Панель суперадмина", callback_data=pack(Cb.SAD, "open")))
+
+    return kb
+
+
+def admin_panel_kb() -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton("Найти пользователя по TG ID", callback_data=pack(Cb.ADM, "profile")))
+    kb.add(types.InlineKeyboardButton("Изменить баланс по TG ID", callback_data=pack(Cb.ADM, "balance")))
+    kb.add(types.InlineKeyboardButton("⛔ Бан/разбан по TG ID", callback_data=pack(Cb.ADM, "ban")))
+    kb.add(types.InlineKeyboardButton("Назад", callback_data=pack(Cb.NAV, "home")))
+    return kb
+
+
+def admin_ban_choice_kb() -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.row(
+        types.InlineKeyboardButton("⛔ Забанить", callback_data=pack(Cb.ADM, "ban_set")),
+        types.InlineKeyboardButton("✅ Разбанить", callback_data=pack(Cb.ADM, "ban_unset")),
+    )
+    kb.add(types.InlineKeyboardButton("Назад", callback_data=pack(Cb.ADM, "open")))
+    return kb
+
+
+def super_admin_panel_kb() -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton("Найти пользователя по TG ID", callback_data=pack(Cb.SAD, "profile")))
+    kb.add(types.InlineKeyboardButton("Изменить баланс по TG ID", callback_data=pack(Cb.SAD, "balance")))
+    kb.add(types.InlineKeyboardButton("⛔ Бан/разбан по TG ID", callback_data=pack(Cb.SAD, "ban")))
+    kb.add(types.InlineKeyboardButton("Управление админами", callback_data=pack(Cb.SAD, "admins")))
+    kb.add(types.InlineKeyboardButton("Назад", callback_data=pack(Cb.NAV, "home")))
+    return kb
+
+
+def super_admin_admins_kb() -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton("✅ Выдать админку по TG ID", callback_data=pack(Cb.SAD, "admin_grant")))
+    kb.add(types.InlineKeyboardButton("❌ Снять админку по TG ID", callback_data=pack(Cb.SAD, "admin_revoke")))
+    kb.add(types.InlineKeyboardButton("Назад", callback_data=pack(Cb.SAD, "open")))
+    return kb
+
+
+def super_admin_ban_choice_kb() -> types.InlineKeyboardMarkup:
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    kb.row(
+        types.InlineKeyboardButton("⛔ Забанить", callback_data=pack(Cb.SAD, "ban_set")),
+        types.InlineKeyboardButton("✅ Разбанить", callback_data=pack(Cb.SAD, "ban_unset")),
+    )
+    kb.add(types.InlineKeyboardButton("Назад", callback_data=pack(Cb.SAD, "open")))
     return kb
 
 
@@ -35,7 +88,7 @@ def support_kb() -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup(row_width=1)
     kb.add(types.InlineKeyboardButton("Обратиться в поддержку", callback_data=pack(Cb.SUP, "contact")))
     kb.add(types.InlineKeyboardButton("Запрос на вывод", callback_data=pack(Cb.WAL, "withdraw")))
-    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data=pack(Cb.NAV, "home")))
+    kb.add(types.InlineKeyboardButton("Назад", callback_data=pack(Cb.NAV, "home")))
     return kb
 
 
@@ -47,7 +100,6 @@ def profile_kb(phone_linked: bool) -> types.InlineKeyboardMarkup:
         types.InlineKeyboardButton("🛟 Поддержка", callback_data=pack(Cb.SUP, "open")),
     )
 
-    # Привязка телефона через существующий flow (там отправляется ReplyKeyboard с request_contact=True)
     if not phone_linked:
         kb.row(
             types.InlineKeyboardButton("📱 Привязать телефон", callback_data=pack(Cb.SELL, "verify_phone")),
