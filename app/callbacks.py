@@ -12,6 +12,8 @@ class Cb:
     ORD = "ORD"
     CHAT = "CHAT"
     SELL = "SELL"
+    ADM = "ADM"      # admin-panel
+    SAD = "SAD"      # super-admin-panel
 
 def pack(*parts: str) -> str:
     return SEP.join(parts)
